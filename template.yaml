@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: 'AWS::Serverless-2016-10-31'
+
+Resources:
+  # Lambda function
+  # This just takes any payload and prints it
+  EventfulLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.8
+      Handler: index.handler
+      InlineCode: |
+        import json
+        def handler(event, _):
+            try:
+                print(json.dumps(event))
+            except:
+                print(event)
+      Events:
+        SNS:
+          Type: SNS
+          Properties:
+            Topic: !Ref SNSTopic
+        SQS:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SQSQueue.Arn
+        SNSSQS:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SNSSQSQueue.Arn
+
+  # SQS -> Lambda
+  SQSQueue:
+    Type: AWS::SQS::Queue
+
+  # SNS -> Lambda
+  SNSTopic:
+    Type: AWS::SNS::Topic
+
+  # SNS -> SQS -> Lambda
+  SNSSQSTopic:
+    Type: AWS::SNS::Topic
+  SNSSQSQueue:
+    Type: AWS::SQS::Queue
+  SNSSQSQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref SNSSQSQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: sns.amazonaws.com
+            Action:
+              - sqs:SendMessage
+            Resource:
+              - "*"
+            Condition:
+              ArnEquals:
+                aws:SourceArn:
+                  !Ref SNSSQSTopic
+  SNSSQSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: !GetAtt SNSSQSQueue.Arn
+      Protocol: sqs
+      TopicArn: !Ref SNSSQSTopic
+
+Outputs:
+  Lambda:
+    Description: Lambda Function Name
+    Value: !Ref EventfulLambda
+
+  SQS:
+    Description: SQS Queue URL
+    Value: !Ref SQSQueue
+
+  SNS:
+    Description: SNS Topic Name
+    Value: !Ref SNSTopic
+
+  SNSSQS:
+    Description: SNS/SQS Topic Name
+    Value: !Ref SNSSQSTopic
